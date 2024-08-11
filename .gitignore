@@ -12,6 +12,9 @@
 *.map
 *.exp
 
+*.list
+*.img
+
 # Precompiled Headers
 *.gch
 *.pch
