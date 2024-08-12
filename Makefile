@@ -1,6 +1,6 @@
-FONTES = teste.c boot.s
+FONTES = genius.c boot.s
 LDSCRIPT = linker.ld
-PROJECT = teste
+PROJECT = genius
 
 #
 # Arquivos de saída 
