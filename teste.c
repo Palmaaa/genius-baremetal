@@ -6,7 +6,7 @@ extern void main(void);
 extern uint8_t inicio_bss;
 extern uint8_t fim_bss;
 
-#define ANSWERS_SIZE 5
+#define ANSWERS_SIZE 20
 
 #define PWM 5
 
@@ -20,24 +20,25 @@ extern uint8_t fim_bss;
 #define BLUE_BTN 20
 #define YELLOW_BTN 21
 
+#define START_BTN 9
+
 volatile uint32_t ticks;
 
 void __attribute__((interrupt("IRQ"))) trata_irq(void) {
-     // Interrupções comuns ("basic")
     int basic = IRQ_REG(pending_basic);
 
-    if(bit_is_set(basic, 9)) {
+    // if(bit_is_set(basic, 9)) {
 
-            // Interrupções do grupo 2
-        int pend = IRQ_REG(pending_2);
-        if(bit_is_set(pend, 20)) {
-        // IRQ 52 = interrupção GPIO
-        uint32_t ev = GPIO_REG(gpeds[0]);
-        if (bit_is_set(ev, RED_BTN)) {
-        }
-        GPIO_REG(gpeds[0]) = ev; // reconhece
-        }
-    }
+    //         // Interrupções do grupo 2
+    //     int pend = IRQ_REG(pending_2);
+    //     if(bit_is_set(pend, 20)) {
+    //     // IRQ 52 = interrupção GPIO
+    //     uint32_t ev = GPIO_REG(gpeds[0]);
+    //     if (bit_is_set(ev, RED_BTN)) {
+    //     }
+    //     GPIO_REG(gpeds[0]) = ev; // reconhece
+    //     }
+    // }
 
     if (bit_is_set(basic, 0)) {
         TIMER_REG(ack) = 1;
@@ -48,7 +49,7 @@ void __attribute__((interrupt("IRQ"))) trata_irq(void) {
 /**
  * Inicializa o timer para gerar interrupção a cada 1 ms.
  */
-void configura_timer(void) {
+void config_timer(void) {
    TIMER_REG(load) = 1000;             // 1MHz / 1000 = 1kHz
    TIMER_REG(control) = __bit(9)       // habilita free-running counter
                       | __bit(7)       // habilita timer
@@ -76,6 +77,15 @@ void config_gpios() {
 
     gpio_init(RED_BTN, GPIO_FUNC_INPUT);
     gpio_set_pulls(RED_BTN, GPIO_PULL_UP);
+    gpio_init(BLUE_BTN, GPIO_FUNC_INPUT);
+    gpio_set_pulls(BLUE_BTN, GPIO_PULL_UP);
+    gpio_init(GREEN_BTN, GPIO_FUNC_INPUT);
+    gpio_set_pulls(GREEN_BTN, GPIO_PULL_UP);
+    gpio_init(YELLOW_BTN, GPIO_FUNC_INPUT);
+    gpio_set_pulls(YELLOW_BTN, GPIO_PULL_UP);
+
+    gpio_init(START_BTN, GPIO_FUNC_INPUT);
+    gpio_set_pulls(START_BTN, GPIO_PULL_UP);
 }
 
 void beep(uint32_t tone) {
@@ -89,44 +99,133 @@ void beep(uint32_t tone) {
     }
 }
 
-uint32_t answers[ANSWERS_SIZE] = {0, 1, 2, 3, 3};
-uint32_t answer_to_led[4] = {RED_LED, BLUE_LED, GREEN_LED, YELLOW_LED};
+uint32_t answers[ANSWERS_SIZE] = {2, 3, 1, 0, 0, 1, 3, 2, 1, 3, 2, 1};
+uint32_t answer_to_led[4] = {RED_LED, GREEN_LED, BLUE_LED, YELLOW_LED};
 uint32_t answer_to_tone[4] = {1, 3, 6, 7};
+
+void show_button_with_tone(uint32_t button) {
+    uart_puts("Exibindo botao");
+    int led = answer_to_led[button];
+    int tone = answer_to_tone[button];
+    gpio_put(led, 1);
+    beep(tone);
+    gpio_put(led, 0);
+}
 
 void show_sequence(int round) {
     uart_puts("Round");
-    uart_puts("\n");
     for (int i = 0; i <= round; i++) {
-        int answer = answers[i];
-        int led = answer_to_led[answer];
-        int tone = answer_to_tone[answer];
-
-        gpio_put(led, 1);
-        beep(tone);
-        gpio_put(led, 0);
+        uint32_t answer = answers[i];
+        show_button_with_tone(answer);
     }
     wait(500);
 }
 
+uint32_t read_buttons(void) {
+    int red_btn = gpio_get(RED_BTN);
+    int blue_btn = gpio_get(BLUE_BTN);
+    int green_btn = gpio_get(GREEN_BTN);
+    int yellow_btn = gpio_get(YELLOW_BTN);
+    if (!red_btn) {
+        uart_puts("Botao vermelho apertado");
+        return 0;
+    }
+    if (!green_btn) {
+        uart_puts("Botao azul apertado");
+        return 1;
+    }
+    if (!blue_btn) {
+        uart_puts("Botao verde apertado");
+        return 2;
+    }
+    if (!yellow_btn) {
+        uart_puts("Botao amarelo apertado");
+        return 3;
+    }
+
+    return -1;
+}
+
+void handle_wrong_play(uint32_t correct_answer) {
+    wait(1000);
+    uart_puts("Mostra jogada correta");
+    beep(9);
+    wait(250);
+    beep(9);
+    wait(250);
+    beep(9);
+    // show_button_with_tone(correct_answer);
+    
+    start_game();
+}
+
+int next;
+int generate_answer(void) {
+    next =  next * 1103515245 + 12345;
+    return ((next/65536) % 32768) % 4;
+}
+
+void read_start(void) {
+    while(gpio_get(START_BTN)) {
+        uart_puts("Esperando inicio");
+    }
+}
+
 void start_game(void) {
+    next = ticks;
+    for (int i = 0; i < ANSWERS_SIZE; i++) {
+        answers[i] = generate_answer();
+    }
+
     while (1) {
         for (int round = 0; round < ANSWERS_SIZE; round++) {
             show_sequence(round);
+
+            uint32_t round_play = 0;
+
+            uint32_t inicio = ticks;
+
+            while (1) {
+                if (gpio_get(START_BTN)) main();
+                uint32_t timeout = (ticks - inicio) > 10000;
+                if (timeout) handle_wrong_play(1);
+
+                uint32_t pressed_button = read_buttons();
+
+                if (pressed_button == -1) continue;
+
+                show_button_with_tone(pressed_button);
+
+                uint32_t correct = pressed_button == answers[round_play];
+                if (correct) {
+                    round_play++;
+                    wait(250);
+                } else {
+                    handle_wrong_play(answers[round_play]);
+                    break;
+                }
+                
+                if (round_play > round) {
+                    break;
+                }
+            }
         }
+
     }
 }
 
 void main(void) {
     config_gpios();
 
-    GPIO_REG(gpren[0]) |= (1 << RED_BTN); // detectar borda de subida
-    IRQ_REG(enable_2) |= (1 << 20); // habilita interrupcao GPIO (52)
+    // GPIO_REG(gpren[0]) |= (1 << RED_BTN); // detectar borda de subida
+    // IRQ_REG(enable_2) |= (1 << 20); // habilita interrupcao GPIO (52)
 
     ticks = 0;
-    configura_timer();
+    config_timer();
     enable_irq(1);
 
+    read_start();
+    wait(250);
     start_game();
-
 }
 
