@@ -120,11 +120,11 @@ uint32_t read_buttons(void) {
         return 0;
     }
     if (!green_btn) {
-        uart_puts("Botao azul apertado");
+        uart_puts("Botao verde apertado");
         return 1;
     }
     if (!blue_btn) {
-        uart_puts("Botao verde apertado");
+        uart_puts("Botao azul apertado");
         return 2;
     }
     if (!yellow_btn) {
